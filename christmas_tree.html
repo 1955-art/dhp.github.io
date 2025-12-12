@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>个性化 3D 粒子圣诞树 - 移动端优化版</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #050505; 
+            background-image: radial-gradient(circle at center, #1a1a1a 0%, #000000 100%); 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #ccc;
+        }
+
+        /* 优化 viewport 设置，防止移动端缩放 */
+        html, body {
+            height: 100%;
+        }
+
+        #three-container {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            opacity: 0; 
+            transition: opacity 1s ease-in; 
+        }
+
+        /* 欢迎页样式 */
+        #welcome-page {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: #050505;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            z-index: 100;
+        }
+
+        #welcome-page h1 {
+            color: #00ffaa;
+            text-shadow: 0 0 10px #00ffaa, 0 0 20px #005533;
+            font-size: 3em;
+            margin-bottom: 20px;
+            letter-spacing: 2px;
+        }
+        /* 移动端字体缩小 */
+        @media screen and (max-width: 600px) {
+            #welcome-page h1 {
+                font-size: 2em;
+            }
+        }
+
+
+        #name-input {
+            padding: 10px 15px;
+            margin: 15px 0;
+            width: 80%;
+            max-width: 300px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid #00ffaa;
+            color: #fff;
+            font-size: 1.1em;
+            text-align: center;
+            box-shadow: 0 0 8px #00ffaa;
+        }
+
+        #enter-button {
+            padding: 10px 30px;
+            background: #0088ff;
+            color: #050505;
+            border: none;
+            border-radius: 5px;
+            font-size: 1.2em;
+            cursor: pointer;
+            box-shadow: 0 0 15px #0088ff;
+            transition: background 0.3s, transform 0.1s;
+        }
+
+        #enter-button:hover {
+            background: #00aaff;
+            transform: scale(1.05);
+        }
+
+        /* 3D 场景信息和名字显示 */
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            color: #aaa;
+            font-family: sans-serif;
+            pointer-events: none;
+            letter-spacing: 2px;
+            z-index: 1; 
+        }
+        #name-display {
+            color: #ff55ff; 
+            text-shadow: 0 0 5px #ff55ff;
+            font-size: 1.2em;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="welcome-page">
+        <h1>欢迎来到 阿柒 的圣诞</h1>
+        <p>输入您的名字，点亮粒子树！</p>
+        <input type="text" id="name-input" placeholder="请输入你的名字" maxlength="15">
+        <button id="enter-button">进入</button>
+    </div>
+
+    <div id="three-container">
+        <div id="info">
+            create by 阿柒
+            <div id="name-display"></div>
+        </div>
+        </div>
+
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.159.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- 移动端检测和参数调整 ---
+        const isMobile = window.innerWidth <= 768;
+        const PARTICLE_COUNT = isMobile ? 8000 : 15000; 
+        const PIXEL_RATIO = isMobile ? 0.7 : 1; 
+        const PARTICLE_SIZE = isMobile ? 0.2 : 0.15; 
+        
+        // --- 核心变量 ---
+        const threeContainer = document.getElementById('three-container');
+        const nameDisplay = document.getElementById('name-display');
+        
+        let scene, camera, renderer, controls, particleTree, starMesh, groundGrid, backgroundParticles, clock;
+
+        // --- 初始化函数（在点击按钮后调用） ---
+        function init(userName) {
+            // 1. 设置名字显示
+            nameDisplay.textContent = `嗨，${userName}！祝你节日快乐！`;
+            
+            // 2. 显示 3D 容器
+            threeContainer.style.opacity = 1;
+            
+            // 3. 初始化 Three.js 场景
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x000000, 0.04); 
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            const startPosition = new THREE.Vector3(0, -5, 10); 
+            const endPosition = new THREE.Vector3(0, 8, 18);   
+            camera.position.copy(startPosition); 
+
+            renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(PIXEL_RATIO); 
+            threeContainer.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.autoRotate = false; 
+            controls.enabled = false; 
+            controls.autoRotateSpeed = 0.5;
+            controls.maxPolarAngle = Math.PI / 1.5;
+
+            // !!! 核心修正：限制缩放范围 !!!
+            controls.minDistance = 5;  // 限制最近距离
+            controls.maxDistance = 30; // 限制最远距离
+            // !!! 核心修正结束 !!!
+
+            // 4. 创建所有场景元素
+            particleTree = createParticleTree();
+            scene.add(particleTree);
+            
+            starMesh = createStar();
+            scene.add(starMesh);
+            
+            const starLight = new THREE.PointLight(0xffffaa, 2, 10);
+            starLight.position.y = 7.5;
+            scene.add(starLight);
+
+            groundGrid = createGroundGrid();
+            scene.add(groundGrid);
+            
+            backgroundParticles = createBackgroundParticles();
+            scene.add(backgroundParticles);
+
+            clock = new THREE.Clock();
+
+            window.addEventListener('resize', onWindowResize);
+            animate(0, startPosition, endPosition); 
+        }
+        
+        // --- 场景元素创建函数 ---
+
+        function createParticleTree() {
+            const particleCount = PARTICLE_COUNT; 
+            const geometry = new THREE.BufferGeometry();
+            let positions = [];
+            let colors = [];
+            let colorObj = new THREE.Color();
+            const treeHeight = 12;
+            const maxRadius = 5;
+
+            for (let i = 0; i < particleCount; i++) {
+                const t = i / particleCount; 
+                let y = t * treeHeight;
+                const currentRadius = maxRadius * (1 - t);
+                const angle = t * Math.PI * 2 * 30; 
+                let x = Math.cos(angle) * currentRadius;
+                let z = Math.sin(angle) * currentRadius;
+                const randomSpread = 0.5 * (1 - t) + 0.1; 
+                
+                x += (Math.random() - 0.5) * randomSpread;
+                y += (Math.random() - 0.5) * 0.2; 
+                z += (Math.random() - 0.5) * randomSpread;
+                positions.push(x, y, z); 
+
+                const randomDecor = Math.random();
+                if (randomDecor > 0.98) {
+                    colorObj.setHSL(0.0, 1.0, 0.6); 
+                } else if (randomDecor > 0.95) {
+                    colorObj.setHSL(0.12, 1.0, 0.6);
+                } else {
+                    colorObj.setHSL(0.25 + Math.random() * 0.1, 0.8, 0.4 + Math.random() * 0.2);
+                }
+                colors.push(colorObj.r, colorObj.g, colorObj.b); 
+            }
+
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+            const material = new THREE.PointsMaterial({
+                size: PARTICLE_SIZE, 
+                vertexColors: true, 
+                transparent: true,
+                opacity: 0.9,
+                blending: THREE.AdditiveBlending, 
+                depthWrite: false,
+                sizeAttenuation: true 
+            });
+            const treeSystem = new THREE.Points(geometry, material);
+            treeSystem.position.y = -treeHeight / 2 + 1; 
+            return treeSystem;
+        }
+        
+        function createGroundGrid() {
+            const gridMaterial = new THREE.LineBasicMaterial({
+                color: 0x0088ff,
+                opacity: 0.3,
+                transparent: true,
+                blending: THREE.AdditiveBlending
+            });
+            const gridHelper = new THREE.GridHelper(40, 40, 0x0088ff, 0x0088ff);
+            gridHelper.material = gridMaterial;
+            gridHelper.position.y = -5;
+            return gridHelper;
+        }
+        
+        function createBackgroundParticles() {
+            const particleCount = 2000;
+            const geo = new THREE.BufferGeometry();
+            const pos = [];
+            for(let i=0; i<particleCount; i++) {
+                pos.push(
+                    (Math.random() - 0.5) * 60, 
+                    (Math.random() - 0.5) * 60, 
+                    (Math.random() - 0.5) * 60  
+                );
+            }
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+            const mat = new THREE.PointsMaterial({
+                color: 0x88ffcc, 
+                size: 0.1,
+                transparent: true,
+                opacity: 0.5,
+                blending: THREE.AdditiveBlending
+            });
+            const particles = new THREE.Points(geo, mat);
+            return particles;
+        }
+        
+        function createStar() {
+            const starGeo = new THREE.SphereGeometry(0.5, 8, 8);
+            const starMat = new THREE.MeshBasicMaterial({ 
+                color: 0xffffaa,
+                transparent: true, 
+                opacity: 0.8,
+                blending: THREE.AdditiveBlending
+            });
+            const starMesh = new THREE.Mesh(starGeo, starMat);
+            starMesh.position.y = 7.5;
+            return starMesh;
+        }
+
+        function onWindowResize() {
+            if (camera && renderer) {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+        }
+        
+        // --- 动画循环 ---
+        let transitionProgress = 0;
+        const transitionDuration = 3.0; 
+        let lastTime = 0;
+
+        function animate(currentTime, startPos, endPos) {
+            requestAnimationFrame(animate.bind(null, currentTime, startPos, endPos)); 
+
+            const deltaTime = (currentTime - lastTime) / 1000 || 0.016; 
+            lastTime = currentTime;
+
+            // 1. 转场特效逻辑
+            if (transitionProgress < transitionDuration) {
+                transitionProgress += deltaTime;
+                const t = Math.min(transitionProgress / transitionDuration, 1);
+                
+                camera.position.lerpVectors(startPos, endPos, t);
+                camera.lookAt(scene.position); 
+
+                if (t >= 1) {
+                    controls.autoRotate = true;
+                    controls.enabled = true;
+                }
+            } else {
+                controls.update(); 
+            }
+
+            const elapsedTime = clock.getElapsedTime();
+
+            // 2. 环境动画
+            if (backgroundParticles) backgroundParticles.rotation.y = elapsedTime * 0.05;
+            if (backgroundParticles) backgroundParticles.rotation.x = Math.sin(elapsedTime * 0.1) * 0.1;
+            if (groundGrid) groundGrid.position.y = -5 + Math.sin(elapsedTime * 0.5) * 0.05;
+            
+            // 3. 星星动画
+            if (starMesh) {
+                starMesh.rotation.y = elapsedTime * 0.5;
+                starMesh.scale.setScalar(1 + Math.sin(elapsedTime * 3) * 0.1); 
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // --- 欢迎页交互逻辑 ---
+        const enterButton = document.getElementById('enter-button');
+        const nameInput = document.getElementById('name-input');
+        const welcomePage = document.getElementById('welcome-page');
+        
+        enterButton.addEventListener('click', () => {
+            let userName = nameInput.value.trim();
+            if (userName === "") {
+                userName = "朋友"; 
+            }
+            
+            // 隐藏欢迎页
+            welcomePage.style.display = 'none';
+            
+            // 初始化 Three.js 场景
+            init(userName);
+        });
+
+    </script>
+</body>
+</html>
